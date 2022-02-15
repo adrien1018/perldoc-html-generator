@@ -7,7 +7,8 @@ import requests
 versions = '-'.join(sys.argv[1:])
 
 target_name = f'perldoc-html-{versions}'
-target = os.path.join(os.path.dirname(os.path.realpath(__file__)), target_name)
+target_dir = os.path.join('..', target_name)
+target_archive = os.path.join(os.path.dirname(os.path.realpath(__file__)), target_name + '.tar.xz')
 
 link_pat = re.compile(br'(<a .*?href=")/(.*?)(#.*?)?(".*?>)')
 
@@ -32,7 +33,7 @@ def save(name, name_map, redir_map):
         target = redir_map.get(mat[2].decode()) or name_map.get(mat[2].decode())
         return mat[1] + quote(target).encode() + (mat[3] or b'') + mat[4]
 
-    with open(os.path.join(target, filename), 'wb') as fp:
+    with open(os.path.join(target_dir, filename), 'wb') as fp:
         if filename[-4:] == 'html':
             content = link_pat.sub(rep, r.content)
         else:
@@ -42,7 +43,7 @@ def save(name, name_map, redir_map):
 
 TIMEOUT = 3
 CONNECT_RETRY, RETRY_INTERVAL = 20, 0.5
-os.makedirs(target, exist_ok=True)
+os.makedirs(target_dir, exist_ok=True)
 for i in range(20):
     port = random.randint(3000, 8000)
     hostname = f'http://localhost:{port}/'
@@ -102,14 +103,14 @@ try:
         pool.join()
 
     realname_pat = re.compile(r'([0-9.]*__)?(.*)')
-    with tarfile.open(target + '.tar.gz', 'w:gz') as tar:
+    with tarfile.open(target_archive, 'w:xz', preset=5) as tar:
         # Sort by real name will put same page of different versions together, thus reducing archive size
-        names = sorted(os.listdir(target), key=lambda x: realname_pat.fullmatch(x)[2])
+        names = sorted(os.listdir(target_dir), key=lambda x: realname_pat.fullmatch(x)[2])
         for i in names:
-            tar.add(os.path.join(target, i), arcname=os.path.join(target_name, i))
+            tar.add(os.path.join(target_dir, i), arcname=os.path.join(target_name, i))
 except KeyboardInterrupt:
     print('Interrupted. Cleaning up...')
 finally:
     proc.terminate()
     proc.wait()
-    shutil.rmtree(target)
+    shutil.rmtree(target_dir)
