@@ -4,7 +4,7 @@ A simple script to generate offline HTML perldoc archive from [perldoc-browser](
 
 ### Example Usages
 
-`generate.sh` will generate a tar.gz file with docs of all given versions.
+`generate.sh` will generate a tar.xz file with docs of all given versions.
 
 ```
 ./generate.sh 5.34.0
