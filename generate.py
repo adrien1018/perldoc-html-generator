@@ -12,33 +12,40 @@ target_archive = os.path.join(os.path.dirname(os.path.realpath(__file__)), targe
 
 link_pat = re.compile(br'(<a .*?href=")/(.*?)(#.*?)?(".*?>)')
 
+
+def get_filename(name):
+    j = name
+    if j == '': j = 'index'
+    if j[-4:] == 'cpan': j = j[:-4] + '_' + j[-4:]
+    if j[-8:] == 'cpan.txt': j = j[:-8] + '_' + j[-8:]
+    if os.path.splitext(j)[1] not in ['.txt', '.h', '.pl']: j += '.html'
+    return j.replace('::', '__').replace('/', '__').replace('*', '%2A').replace(':', '%3A')
+
+
 def get_pages(name):
     r = requests.get(hostname + name, allow_redirects=False)
     if r.status_code != 200:
         return set(), {name: r.headers['Location']} if r.status_code == 301 else {}
 
+    with open(os.path.join(target_dir, get_filename(name)), 'xb') as fp:
+        fp.write(r.content)
     ret = set()
     for mat in link_pat.finditer(r.content):
         ret.add(mat[2].decode())
     return ret, {}
 
 
-def save(name, name_map, redir_map):
-    filename = name_map[name]
-    r = requests.get(hostname + name, allow_redirects=False)
-    if r.status_code != 200:
-        return
-
+def modify(filename, redir_map):
     def rep(mat):
-        target = redir_map.get(mat[2].decode()) or name_map.get(mat[2].decode())
+        target = redir_map.get(mat[2].decode()) or get_filename(mat[2].decode())
         return mat[1] + quote(target).encode() + (mat[3] or b'') + mat[4]
 
-    with open(os.path.join(target_dir, filename), 'wb') as fp:
-        if filename[-4:] == 'html':
-            content = link_pat.sub(rep, r.content)
-        else:
-            content = r.content
-        fp.write(content)
+    if filename[-4:] == 'html':
+        with open(os.path.join(target_dir, filename), 'rb') as fp:
+            content = fp.read()
+        content = link_pat.sub(rep, content)
+        with open(os.path.join(target_dir, filename), 'wb') as fp:
+            fp.write(content)
 
 
 TIMEOUT = 3
@@ -60,57 +67,47 @@ else:
     sys.exit(1)
 
 try:
-    for i in range(CONNECT_RETRY):
-        try:
-            requests.get(hostname, allow_redirects=False)
-            break
-        except requests.exceptions.ConnectionError as e:
-            err = e
-        time.sleep(RETRY_INTERVAL)
-    else:
-        raise e
-
-    with ThreadPool(4) as pool:
-        redir_map = {}
-        names = {''}
-        prev_names = {''}
-        while True:
-            result = []
-            for i in prev_names:
-                result.append(pool.apply_async(get_pages, (i,)))
-            prev_names = set()
-            for i in result:
-                nw, redir = i.get()
-                prev_names.update(nw - names)
-                redir_map.update(redir)
-            if not prev_names:
+    try:
+        for i in range(CONNECT_RETRY):
+            try:
+                requests.get(hostname, allow_redirects=False)
                 break
-            names |= prev_names
+            except requests.exceptions.ConnectionError as e:
+                err = e
+            time.sleep(RETRY_INTERVAL)
+        else:
+            raise e
 
-        name_map = {}
-        for i in names:
-            j = str(i)
-            if j == '': j = 'index'
-            if j[-4:] == 'cpan': j = j[:-4] + '_' + j[-4:]
-            if j[-8:] == 'cpan.txt': j = j[:-8] + '_' + j[-8:]
-            if os.path.splitext(j)[1] not in ['.txt', '.h', '.pl']: j += '.html'
-            name_map[i] = j.replace('::', '__').replace('/', '__').replace('*', '%2A').replace(':', '%3A')
-        assert len(name_map) == len(set(name_map.values()))
+        with ThreadPool(5) as pool:
+            redir_map = {}
+            names = {''}
+            prev_names = {''}
+            while True:
+                result = []
+                for i in prev_names:
+                    result.append(pool.apply_async(get_pages, (i,)))
+                prev_names = set()
+                for i in result:
+                    nw, redir = i.get()
+                    prev_names.update(nw - names)
+                    redir_map.update(redir)
+                if not prev_names:
+                    break
+                names |= prev_names
+    finally:
+        proc.terminate()
+        proc.wait()
 
-        for i in sorted(name_map):
-            pool.apply_async(save, (i, name_map, redir_map))
-        pool.close()
-        pool.join()
+    for i in os.listdir(target_dir):
+        modify(i, redir_map)
 
     realname_pat = re.compile(r'([0-9.]*__)?(.*)')
     with tarfile.open(target_archive, 'w:xz', preset=5) as tar:
         # Sort by real name will put same page of different versions together, thus reducing archive size
-        names = sorted(os.listdir(target_dir), key=lambda x: realname_pat.fullmatch(x)[2])
+        names = sorted(os.listdir(target_dir), key=lambda x: (realname_pat.fullmatch(x)[2], x))
         for i in names:
             tar.add(os.path.join(target_dir, i), arcname=os.path.join(target_name, i))
 except KeyboardInterrupt:
     print('Interrupted. Cleaning up...')
 finally:
-    proc.terminate()
-    proc.wait()
     shutil.rmtree(target_dir)
