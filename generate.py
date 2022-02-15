@@ -10,7 +10,7 @@ target_name = f'perldoc-html-{versions}'
 target_dir = os.path.join('..', target_name)
 target_archive = os.path.join(os.path.dirname(os.path.realpath(__file__)), target_name + '.tar.xz')
 
-link_pat = re.compile(br'(<a .*?href=")/(.*?)(#.*?)?(".*?>)')
+link_pat = re.compile(br'(<(?:a|script|link|img) .*?(?:href|src)=")/(.*?)(#.*?)?(".*?>)')
 
 
 def get_filename(name):
@@ -18,7 +18,7 @@ def get_filename(name):
     if j == '': j = 'index'
     if j[-4:] == 'cpan': j = j[:-4] + '_' + j[-4:]
     if j[-8:] == 'cpan.txt': j = j[:-8] + '_' + j[-8:]
-    if os.path.splitext(j)[1] not in ['.txt', '.h', '.pl']: j += '.html'
+    if os.path.splitext(j)[1] not in ['.txt', '.h', '.pl', '.js', '.xml']: j += '.html'
     return j.replace('::', '__').replace('/', '__').replace('*', '%2A').replace(':', '%3A')
 
 
