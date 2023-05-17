@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [[ $# -eq 0 ]]; then
-  versions=(5.36.0)
+  versions=(5.36.1)
 else
   versions=("$@")
 fi
